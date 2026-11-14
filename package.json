@@ -56,6 +56,26 @@
     "type": "git",
     "url": "git+https://github.com/firebase-email-otp/firebase-email-otp.git"
   },
+  "homepage": "https://github.com/firebase-email-otp/firebase-email-otp#readme",
+  "bugs": {
+    "url": "https://github.com/firebase-email-otp/firebase-email-otp/issues"
+  },
+  "keywords": [
+    "firebase",
+    "firebase-auth",
+    "firebase-functions",
+    "cloud-functions",
+    "firestore",
+    "email-otp",
+    "otp",
+    "one-time-password",
+    "passwordless",
+    "authentication",
+    "custom-token",
+    "react-native",
+    "react-native-firebase",
+    "expo"
+  ],
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
     "access": "public"
