@@ -1,6 +1,6 @@
 {
   "name": "firebase-email-otp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Passwordless email-OTP authentication for Firebase.",
   "license": "MIT",
   "type": "module",
