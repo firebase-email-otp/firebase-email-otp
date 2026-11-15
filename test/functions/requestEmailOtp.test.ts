@@ -22,7 +22,7 @@ vi.mock('firebase-admin/firestore', () => {
 import { createRequestEmailOtp } from '../../src/functions/requestEmailOtp';
 import {
   OTP_ERROR_CODES,
-  type OtpEmail,
+  type OtpEmailContext,
   type RequestOtpOptions,
   type RequestOtpPayload,
   type RequestOtpResponse,
@@ -46,9 +46,9 @@ const TEST_SECRET = 'test-otp-secret';
 
 describe('createRequestEmailOtp', () => {
   let mock: MockFirestore;
-  const sentEmails: OtpEmail[] = [];
-  const sendEmail = vi.fn(async (email: OtpEmail) => {
-    sentEmails.push(email);
+  const sentEmails: OtpEmailContext[] = [];
+  const sendEmail = vi.fn(async (otp: OtpEmailContext) => {
+    sentEmails.push(otp);
   });
 
   beforeEach(() => {
@@ -60,13 +60,12 @@ describe('createRequestEmailOtp', () => {
 
   const factory = (extra: Partial<RequestOtpOptions> = {}) =>
     createRequestEmailOtp({
-      appName: 'TestApp',
-      secret: TEST_SECRET,
+      otpSecret: TEST_SECRET,
       sendEmail,
       ...extra,
     });
 
-  it('writes a valid OTP doc and delivers the composed email', async () => {
+  it('writes a valid OTP doc and delivers the OTP payload to sendEmail', async () => {
     const res = await invoke(factory(), { email: ' User@Example.com ' });
 
     expect(res).toEqual({
@@ -83,15 +82,13 @@ describe('createRequestEmailOtp', () => {
     expect(doc!.expiresAt).toBe(lastSentAt + 600_000);
     expect(doc!.createdAt).toBe('__server_timestamp__');
 
-    // email delivered with a 6-digit code, and the stored hash matches it
+    // sendEmail invoked with a 6-digit code, and the stored hash matches it
     expect(sentEmails).toHaveLength(1);
-    const codeMatch = /code is (\d{6})$/.exec(sentEmails[0]!.subject);
-    expect(codeMatch).not.toBeNull();
-    const code = codeMatch![1]!;
-    expect(code).toHaveLength(6);
+    const { to, code, expiresMinutes } = sentEmails[0]!;
+    expect(to).toBe('user@example.com');
+    expect(code).toMatch(/^\d{6}$/);
+    expect(expiresMinutes).toBe(10);
     expect(doc!.hash).toBe(hashOtpCode('user@example.com', code, TEST_SECRET));
-    expect(sentEmails[0]!.to).toBe('user@example.com');
-    expect(sentEmails[0]!.html).toContain(code);
   });
 
   it('rejects missing or malformed emails without side effects', async () => {
@@ -165,8 +162,7 @@ describe('createRequestEmailOtp', () => {
 
   it('deletes the doc and throws internal when delivery fails', async () => {
     const failing = createRequestEmailOtp({
-      appName: 'TestApp',
-      secret: TEST_SECRET,
+      otpSecret: TEST_SECRET,
       sendEmail: async () => {
         throw new Error('email delivery failed');
       },
@@ -181,8 +177,7 @@ describe('createRequestEmailOtp', () => {
   it('does not delete a newer OTP doc when a stale delivery fails', async () => {
     const newerHash = hashOtpCode('a@b.com', '999999', TEST_SECRET);
     const staleFailure = createRequestEmailOtp({
-      appName: 'TestApp',
-      secret: TEST_SECRET,
+      otpSecret: TEST_SECRET,
       sendEmail: async () => {
         // Simulate another request overwriting the OTP doc while this delivery was in flight
         mock.store.set('auth_otps/a@b.com', {
@@ -208,8 +203,7 @@ describe('createRequestEmailOtp', () => {
   it('fails fast at factory time when sendEmail is missing', () => {
     expect(() =>
       createRequestEmailOtp({
-        appName: 'TestApp',
-        secret: TEST_SECRET,
+        otpSecret: TEST_SECRET,
       } as RequestOtpOptions),
     ).toThrow(/`sendEmail` is required/);
   });
@@ -228,13 +222,47 @@ describe('createRequestEmailOtp', () => {
     expect(doc).toBeDefined();
     const customLastSentAt = doc!.lastSentAt as number;
     expect(doc!.expiresAt).toBe(customLastSentAt + 300_000);
-    expect(sentEmails[0]!.html).toContain('5 minutes');
+    expect(sentEmails[0]!.expiresMinutes).toBe(5);
   });
 
-  it('auto-binds Firebase SecretParam objects from secret onto onCall options', () => {
+  it('auto-binds Firebase SecretParam objects from otpSecret onto onCall options', () => {
     const fn = createRequestEmailOtp({
-      appName: 'TestApp',
-      secret: { name: 'CUSTOM_OTP_HMAC', value: () => TEST_SECRET },
+      otpSecret: { name: 'CUSTOM_OTP_HMAC', value: () => TEST_SECRET },
+      sendEmail,
+    }) as unknown as {
+      __endpoint?: { secretEnvironmentVariables?: { key: string }[] };
+    };
+
+    expect(fn.__endpoint?.secretEnvironmentVariables).toEqual([
+      { key: 'CUSTOM_OTP_HMAC' },
+    ]);
+  });
+
+  it('binds extraSecrets onto the onCall options alongside otpSecret', () => {
+    const fn = createRequestEmailOtp({
+      otpSecret: { name: 'CUSTOM_OTP_HMAC', value: () => TEST_SECRET },
+      extraSecrets: [
+        { name: 'SENDGRID_API_KEY', value: () => 'sg-test' },
+        // plain string / getter entries are accepted but never bound
+        'not-a-param',
+        () => 'getter',
+      ],
+      sendEmail,
+    }) as unknown as {
+      __endpoint?: { secretEnvironmentVariables?: { key: string }[] };
+    };
+
+    expect(fn.__endpoint?.secretEnvironmentVariables).toEqual([
+      { key: 'CUSTOM_OTP_HMAC' },
+      { key: 'SENDGRID_API_KEY' },
+    ]);
+  });
+
+  it('de-dupes a secret passed as both otpSecret and extraSecrets', () => {
+    const otpSecret = { name: 'CUSTOM_OTP_HMAC', value: () => TEST_SECRET };
+    const fn = createRequestEmailOtp({
+      otpSecret,
+      extraSecrets: [otpSecret],
       sendEmail,
     }) as unknown as {
       __endpoint?: { secretEnvironmentVariables?: { key: string }[] };

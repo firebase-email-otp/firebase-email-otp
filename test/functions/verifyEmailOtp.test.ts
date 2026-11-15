@@ -72,7 +72,7 @@ describe('createVerifyEmailOtp', () => {
   });
 
   const handler: Handler = createVerifyEmailOtp({
-    secret: TEST_SECRET,
+    otpSecret: TEST_SECRET,
     provision,
   });
 
@@ -198,9 +198,9 @@ describe('createVerifyEmailOtp', () => {
     expect((customErr as HttpsError).message).toBe('Account suspended.');
   });
 
-  it('auto-binds Firebase SecretParam objects from secret onto onCall options', () => {
+  it('auto-binds Firebase SecretParam objects from otpSecret onto onCall options', () => {
     const fn = createVerifyEmailOtp({
-      secret: { name: 'CUSTOM_OTP_HMAC', value: () => TEST_SECRET },
+      otpSecret: { name: 'CUSTOM_OTP_HMAC', value: () => TEST_SECRET },
       provision,
     }) as unknown as {
       __endpoint?: { secretEnvironmentVariables?: { key: string }[] };
@@ -208,6 +208,21 @@ describe('createVerifyEmailOtp', () => {
 
     expect(fn.__endpoint?.secretEnvironmentVariables).toEqual([
       { key: 'CUSTOM_OTP_HMAC' },
+    ]);
+  });
+
+  it('binds extraSecrets onto the onCall options alongside otpSecret', () => {
+    const fn = createVerifyEmailOtp({
+      otpSecret: { name: 'CUSTOM_OTP_HMAC', value: () => TEST_SECRET },
+      extraSecrets: [{ name: 'STRIPE_SECRET', value: () => 'sk-test' }],
+      provision,
+    }) as unknown as {
+      __endpoint?: { secretEnvironmentVariables?: { key: string }[] };
+    };
+
+    expect(fn.__endpoint?.secretEnvironmentVariables).toEqual([
+      { key: 'CUSTOM_OTP_HMAC' },
+      { key: 'STRIPE_SECRET' },
     ]);
   });
 });

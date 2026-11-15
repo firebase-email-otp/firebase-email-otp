@@ -6,3 +6,4 @@ export { createRequestEmailOtp } from './requestEmailOtp';
 export { createVerifyEmailOtp } from './verifyEmailOtp';
 export { createCleanupExpiredOtps } from './cleanupExpiredOtps';
 export { generateOtpCode, hashOtpCode, isOtpHashMatch } from './crypto';
+export { buildOtpEmail } from '../shared';
