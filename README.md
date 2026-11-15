@@ -1,21 +1,14 @@
 # firebase-email-otp
 
-Passwordless **email OTP** authentication in one package with four entry points:
+A purpose-built package that brings secure, production-ready passwordless email authentication to Firebase Auth through one-time verification codes (OTP). Firebase Auth does not offer a built-in passwordless email OTP flow. This package is designed to fill that gap.
 
-### Server side
+Note that this package is a **server-side bridge to Firebase's own auth**, not a standalone login system. It proves the caller owns an email address, then hands off to Firebase's in-house login methods (`createCustomToken` + `signInWithCustomToken`).
 
-- **`/functions`** — ready-to-register Firebase Cloud Function factories for sending codes, verifying codes, and scheduled cleanup.
+The flow:
 
-### Client side (Opt-in)
-
-- **`/react-native`** — mobile API layer (`requestEmailOtp`, `verifyEmailOtp`, `signInWithEmailOtp`).
-- **`/react-native/ui`** — pre-built components: `<OtpInput />` (auto-fill code boxes) and `<EmailOtpModal />` (the full two-step dialog).
-
-### Shared
-
-- **`/shared`** — pure TypeScript constants, types, validation, and the email template, with no SDK imports.
-
-You can use `/functions` without installing the package on the client if you prefer to own your email form, OTP input, styling, and error handling.
+1. **Request** — The client calls the `requestEmailOtp` Cloud Function with an email. The function generates a 6-digit code, hashes it (HMAC-SHA256 with a server-side secret), stores it in a single-use Firestore document, and delivers it via your `sendEmail` callback.
+2. **Verify** — The client calls the `verifyEmailOtp` function with the email and code. Inside a Firestore transaction it re-hashes the submitted code, compares it in constant time, and deletes the document on a match (single-use).
+3. **Sign in** — On success it calls your `provision(email)` hook to resolve the user's `uid`, mints a **Firebase custom token** via the Admin SDK, and returns it. The client finishes with Firebase Auth's `signInWithCustomToken`, so the resulting session is a standard Firebase Auth session — token storage, refresh, and `onAuthStateChanged` are all handled by Firebase itself.
 
 ---
 
@@ -244,6 +237,25 @@ await signInWithCustomToken(getAuth(), result.data.customToken);
 ```
 
 The callable names and payloads must match the deployed backend functions. You can still import `/shared` separately for shared constants and validation if desired.
+
+---
+
+## Entry points:
+
+### Server side
+
+- **`/functions`** — ready-to-register Firebase Cloud Function factories for sending codes, verifying codes, and scheduled cleanup.
+
+### Client side (Opt-in)
+
+- **`/react-native`** — mobile API layer (`requestEmailOtp`, `verifyEmailOtp`, `signInWithEmailOtp`).
+- **`/react-native/ui`** — pre-built components: `<OtpInput />` (auto-fill code boxes) and `<EmailOtpModal />` (the full two-step dialog).
+
+### Shared
+
+- **`/shared`** — pure TypeScript constants, types, validation, and the email template, with no SDK imports.
+
+You can use `/functions` without installing the package on the client if you prefer to own your email form, OTP input, styling, and error handling.
 
 ---
 
