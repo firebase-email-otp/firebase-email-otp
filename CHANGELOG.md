@@ -5,11 +5,18 @@
 
 ### ⚠ BREAKING CHANGES
 
-* the sendEmail callback now receives OtpEmailContext ({ to, code, expiresMinutes }) instead of the composed OtpEmail ({ to, subject, text, html }), and the required appName option is removed from createRequestEmailOtp. To keep the previous email, compose it inside sendEmail: buildOtpEmail({ ...otp, appName: 'MyApp' }).
+* the `sendEmail` callback now receives `OtpEmailContext` (`{ to, code, expiresMinutes }`) instead of the composed `OtpEmail` (`{ to, subject, text, html }`), and the required `appName` option is removed from `createRequestEmailOtp`. To keep the previous email, compose it inside `sendEmail`: `buildOtpEmail({ ...otp, appName: 'MyApp' })`.
+
+* the `secret` option is renamed to `otpSecret` in `createRequestEmailOtp` and `createVerifyEmailOtp`.
 
 ### Features
 
 * host-provided email templates ([#3](https://github.com/firebase-email-otp/firebase-email-otp/issues/3)) ([d441ddc](https://github.com/firebase-email-otp/firebase-email-otp/commit/d441ddc59e9a892f7b2a0f68d590055b2784ca8c))
+
+  * `sendEmail` receives the raw OTP payload, so hosts can use their own or a provider-hosted template; the built-in template is available on demand via `buildOtpEmail`, now re-exported from the `/functions` entry.
+  * `extraSecrets` option (request + verify) binds additional `defineSecret(...)` params onto the callable for per-call `.value()` resolution (e.g. a SendGrid API key).
+  * README documents both template options with a SendGrid example.
+
 
 ## [1.0.1](https://github.com/firebase-email-otp/firebase-email-otp/compare/v1.0.0...v1.0.1) (2026-11-14)
 
