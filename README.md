@@ -44,37 +44,74 @@ Install the peer packages required by the entry point you use:
 
 #### Step 1 — Configure your secret
 
-Provide `OTP_SECRET` (required, see [Security](#security)). `secret` accepts a plain string (e.g., from `process.env`), a getter `() => string`, or a Firebase `defineSecret(...)` param.
+Provide `OTP_SECRET` (required, see [Security](#security)). `otpSecret` accepts a plain string (e.g., from `process.env`), a getter `() => string`, or a Firebase `defineSecret(...)` param.
 
 Both `createRequestEmailOtp` and `createVerifyEmailOtp` must receive the **same** `OTP_SECRET`.
 
 #### Step 2 — Register the three functions
 
-The example below uses Firebase `defineSecret(...)` (auto-bound and resolved per call), or you can pass plain strings / getters instead.
+The examples below use Firebase `defineSecret(...)` (auto-bound and resolved per call), or you can pass plain strings / getters instead. You pick how `sendEmail` composes the email:
+
+##### Option A — built-in template
+
+```typescript
+// callable/requestEmailOtp.ts
+import { defineSecret } from 'firebase-functions/params';
+import {
+  createRequestEmailOtp,
+  buildOtpEmail,
+} from 'firebase-email-otp/functions';
+
+const otpSecret = defineSecret('OTP_SECRET');
+
+exports.requestEmailOtp = createRequestEmailOtp({
+  otpSecret: otpSecret,
+  // enforceAppCheck defaults to true; pass it explicitly and set it to false only if needed.
+  sendEmail: async (otp) => {
+    // Composes { to, subject, text, html } — deliver it via any provider.
+    const email = buildOtpEmail({ ...otp, appName: 'MyApp' });
+    await yourEmailProvider.send(email);
+  },
+});
+```
+
+##### Option B — use your own email template
+
+You control the subject, body, and branding — compose the email yourself from `otp` (`{ to, code, expiresMinutes }`), or use a hosted provider template.
+
+_An example with SendGrid_
 
 ```typescript
 // callable/requestEmailOtp.ts
 import { defineSecret } from 'firebase-functions/params';
 import { createRequestEmailOtp } from 'firebase-email-otp/functions';
+import sgMail from '@sendgrid/mail';
 
 const otpSecret = defineSecret('OTP_SECRET');
+const sendgridSecret = defineSecret('SENDGRID_API_KEY');
 
 exports.requestEmailOtp = createRequestEmailOtp({
-  appName: 'MyApp',
-  secret: otpSecret,
+  otpSecret: otpSecret,
+  // Bind SENDGRID_API_KEY to the callable so it can be resolved per call.
+  extraSecrets: [sendgridSecret],
   // enforceAppCheck defaults to true; pass it explicitly and set it to false only if needed.
-  sendEmail: async (email) => {
-    // Deliver the composed email ({ to, subject, text, html }) via your
-    // provider of choice.
-    await yourEmailProvider.send({
-      to: email.to,
-      subject: email.subject,
-      text: email.text,
-      html: email.html,
+  sendEmail: async (otp) => {
+    sgMail.setApiKey(sendgridSecret.value());
+    await sgMail.send({
+      to: otp.to,
+      from: 'MyApp <noreply@myapp.com>', // must be a verified SendGrid sender
+      templateId: 'd-otp', // your template's d-… ID
+      dynamicTemplateData: {
+        appName: 'MyApp',
+        code: otp.code,
+        expiresMinutes: otp.expiresMinutes,
+      },
     });
   },
 });
 ```
+
+`SENDGRID_API_KEY` is bound to the callable via the `extraSecrets` option and resolved per call with `sendgridSecret.value()` — no env var required. (Plain strings/getters passed to `extraSecrets` are accepted but only `defineSecret(...)` params are actually bound; if you'd rather use an env var, call `sgMail.setApiKey(process.env.SENDGRID_API_KEY!)` at module load and omit `extraSecrets`.)
 
 ```typescript
 // callable/verifyEmailOtp.ts
@@ -92,7 +129,7 @@ const provision = async (email: string): Promise<string> => {
 };
 
 exports.verifyEmailOtp = createVerifyEmailOtp({
-  secret: otpSecret,
+  otpSecret: otpSecret,
   // enforceAppCheck defaults to true; pass it explicitly and set it to false only if needed.
   provision,
 });
@@ -216,13 +253,14 @@ The callable names and payloads must match the deployed backend functions. You c
 
 | Option               | Default              | Notes                                                                                                  |
 | -------------------- | -------------------- | ------------------------------------------------------------------------------------------------------ |
-| `secret`             | _required_           | HMAC-SHA256 secret (`string`, getter, or `defineSecret('OTP_SECRET')`); must match on request & verify |
+| `otpSecret`          | _required_           | HMAC-SHA256 secret (`string`, getter, or `defineSecret('OTP_SECRET')`); must match on request & verify |
+| `extraSecrets`       | `[]`                 | Extra secrets to bind to the callable (e.g. `sendgridSecret`) so they resolve per call via `.value()`  |
 | `collection`         | `'auth_otps'`        | Same value must be used on all three factories                                                         |
 | `cooldownMs`         | `60_000`             | Resend rate limit                                                                                      |
 | `expiryMs`           | `600_000`            | Code lifetime (10 min)                                                                                 |
 | `maxAttempts`        | `5`                  | Brute-force cap per code                                                                               |
 | `enforceAppCheck`    | `true`               | Enforces Firebase App Check on the callable; pass `false` only if needed                               |
-| `sendEmail`          | _required_           | `(email: OtpEmail) => Promise<void>` — your email delivery (any provider)                              |
+| `sendEmail`          | _required_           | `(otp: OtpEmailContext) => Promise<void>` — receives `{ to, code, expiresMinutes }`                    |
 | `schedule` (cleanup) | `'every 15 minutes'` | Cloud Scheduler syntax                                                                                 |
 
 ### Error contract (surfaced verbatim to users)

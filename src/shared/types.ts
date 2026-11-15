@@ -30,6 +30,21 @@ export interface VerifyOtpResponse {
 // Backend option types
 // ============================================================================
 
+/** Core OTP payload passed to `sendEmail`. */
+export interface OtpEmailContext {
+  to: string;
+  /** The plaintext 6-digit code — only ever passed to the sender, never persisted. */
+  code: string;
+  /** Code lifetime in minutes, for the email copy. Rounded to the nearest minute from `expiryMs` — e.g. a 330_000 ms lifetime reports as 6. */
+  expiresMinutes: number;
+}
+
+/** Inputs for {@link buildOtpEmail}. */
+export interface OtpEmailInput extends OtpEmailContext {
+  /** Brand name used in the email subject and body. */
+  appName: string;
+}
+
 /** A fully composed OTP email, ready to dispatch. */
 export interface OtpEmail {
   to: string;
@@ -41,17 +56,7 @@ export interface OtpEmail {
 /**
  * Delivers the OTP email. Projects provide their own sender.
  */
-export type OtpEmailSender = (email: OtpEmail) => Promise<void>;
-
-/** Inputs for {@link buildOtpEmail}. */
-export interface OtpEmailInput {
-  to: string;
-  appName: string;
-  /** The plaintext 6-digit code — only ever passed to the sender, never persisted. */
-  code: string;
-  /** Code lifetime in minutes, for the email copy. */
-  expiresMinutes: number;
-}
+export type OtpEmailSender = (otp: OtpEmailContext) => Promise<void>;
 
 /**
  * A secret resolved per call. Accepts a plain string, a getter function
@@ -69,7 +74,7 @@ export interface BaseOtpOptions {
    * `createVerifyEmailOtp`. Accepts a plain string, a getter function, or
    * `defineSecret('OTP_SECRET')`.
    */
-  secret: SecretInput;
+  otpSecret: SecretInput;
   /** Firestore collection holding pending OTPs. Default: `auth_otps`. */
   collection?: string;
   /** Resend cooldown in ms. Default: 60_000. */
@@ -84,11 +89,18 @@ export interface BaseOtpOptions {
    * leaving it off in production removes a key defense against scripted abuse.
    */
   enforceAppCheck?: boolean;
+  /**
+   * Extra secrets (e.g. `defineSecret('SENDGRID_API_KEY')`) to bind to the
+   * callable so they can be resolved per call with `.value()`. Needed for any
+   * secret besides `otpSecret` — the factory only auto-binds `otpSecret`
+   * itself. Each entry may be a plain string, a getter, or a
+   * `defineSecret(...)` param; only `defineSecret(...)` params are actually
+   * bound onto the function.
+   */
+  extraSecrets?: SecretInput[];
 }
 
 export interface RequestOtpOptions extends BaseOtpOptions {
-  /** Brand name used in the email subject and body. Required. */
-  appName: string;
   /** Required. Delivers the OTP email via your chosen provider. */
   sendEmail: OtpEmailSender;
 }

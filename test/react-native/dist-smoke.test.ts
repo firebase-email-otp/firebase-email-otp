@@ -54,6 +54,7 @@ describe.skipIf(!hasDist)('built dist artifacts', () => {
     expect(typeof mod.createRequestEmailOtp).toBe('function');
     expect(typeof mod.createVerifyEmailOtp).toBe('function');
     expect(typeof mod.createCleanupExpiredOtps).toBe('function');
+    expect(typeof mod.buildOtpEmail).toBe('function');
   });
 
   it('shared ESM entry works standalone', async () => {

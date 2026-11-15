@@ -5,7 +5,6 @@ import {
   DEFAULT_COLLECTION,
   OTP_EXPIRY_MS,
   RESEND_COOLDOWN_MS,
-  buildOtpEmail,
   isValidEmail,
   normalizeEmail,
   OTP_ERROR_CODES,
@@ -22,10 +21,9 @@ import { collectSecretParams, generateOtpCode, hashOtpCode } from './crypto';
  *
  * ```ts
  * exports.requestEmailOtp = createRequestEmailOtp({
- *   appName: 'MyApp',
- *   secret: defineSecret('OTP_SECRET'),
- *   sendEmail: async (email) => {
- *     // deliver via your email provider of choice
+ *   otpSecret: defineSecret('OTP_SECRET'),
+ *   sendEmail: async (otp) => {
+ *     const email = buildOtpEmail({ ...otp, appName: 'MyApp' });
  *     await yourMailProvider.send(email);
  *   },
  * });
@@ -41,7 +39,10 @@ export function createRequestEmailOtp(options: RequestOtpOptions) {
   }
   const sendEmail = options.sendEmail;
 
-  const secrets = collectSecretParams(options.secret);
+  const secrets = collectSecretParams(
+    options.otpSecret,
+    ...(options.extraSecrets ?? []),
+  );
 
   return onCall<RequestOtpPayload, Promise<RequestOtpResponse>>(
     {
@@ -92,7 +93,7 @@ export function createRequestEmailOtp(options: RequestOtpOptions) {
         }
 
         code = generateOtpCode(CODE_LENGTH);
-        codeHash = hashOtpCode(email, code, options.secret);
+        codeHash = hashOtpCode(email, code, options.otpSecret);
 
         transaction.set(otpDocRef, {
           hash: codeHash,
@@ -110,15 +111,12 @@ export function createRequestEmailOtp(options: RequestOtpOptions) {
         };
       }
 
-      const composed = buildOtpEmail({
-        to: email,
-        appName: options.appName,
-        code,
-        expiresMinutes: Math.round(expiryMs / 60000),
-      });
-
       try {
-        await sendEmail(composed);
+        await sendEmail({
+          to: email,
+          code,
+          expiresMinutes: Math.round(expiryMs / 60000),
+        });
       } catch (err) {
         console.error('Failed to send OTP email:', err);
         // Clean up the created OTP document only if it has not been replaced by a newer request
